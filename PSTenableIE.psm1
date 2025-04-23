@@ -1,0 +1,342 @@
+<#
+.SYNOPSIS
+    This script provides a class for interacting with the Tenable REST API.
+
+.DESCRIPTION
+    The PSTenableIE class allows you to interact with the Tenable REST API, providing methods to retrieve paginated results and specific deviances from the API.
+    It includes properties for the API key, tenant FQDN, content type, profile ID, infrastructure ID, and directory ID. The class also includes a static method
+    to create an instance with default values.
+    The script includes PowerShell functions that instantiate the class and call the class methods so you don't need to interact with the class directly.
+    If you want to use the class directly, you can import it as a module and create an instance of the class using the static method or the constructor.
+
+.EXAMPLE
+    Import-Module PSTenableIE
+    using module PSTenableIE
+    $tapi = [PSTenableIE]::ConstructWithDefaults("your_api_key", "your_tenant_fqdn")
+
+.EXAMPLE
+    Import-Module PSTenableIE
+    using module PSTenableIE
+    $tapi = [PSTenableIE]::new("your_api_key", "your_tenant_fqdn", "application/json", 1, 1, 1)
+
+.EXAMPLE
+    $deviances = $tapi.GetAllDirectoryDeviances("infrastructure_id", "directory_id")
+    $specificDeviances = $tapi.GetSpecificCheckerDeviances("checker_id", "profile_id", "infrastructure_id", "directory_id")
+
+.EXAMPLE
+    Import-Module PSTenableIE
+    $tapi = New-PSTenableIE -ApiKey "your_api_key" -TenantFqdn "your_tenant_fqdn" -ContentType "application/json" -ProfileId 1 -InfrastructureId 1 -DirectoryId 1
+    $PasswordWeaknesses = Get-SpecificCheckerDeviances -Tapi $tapi -CheckerId 50
+
+.NOTES
+    Version     Date        Author          Comments
+    -------     ----------  -------------- ----------------
+    1.0         2025-04-04  Ray Storer     Initial
+    1.1         2025-04-05  Ray Storer     Added GetAllDirectoryDeviances method
+    1.2         2025-04-05  Ray Storer     Added GetSpecificCheckerDeviances method
+    1.3         2025-04-05  Ray Storer     Added error handling for API requests
+    1.4         2025-04-05  Ray Storer     Added static method ConstructWithDefaults
+    1.5         2025-04-05  Ray Storer     Added New-PSTenableIE function for easier instantiation
+    1.6         2025-04-05  Ray Storer     Added Get-AllDirectoryDeviances and Get-SpecificCheckerDeviances functions
+    1.7         2025-04-05  Ray Storer     Added usage examples for the class and functions
+    1.8         2025-04-05  Ray Storer     Added Update-ADObjectByCheckerId function
+
+TODO:
+    - Implement additional error handling for API requests
+    - Add more methods and PowerShell functions for other Tenable APIs
+    - Consider implementing a retry mechanism for failed requests
+    - Add support for other HTTP methods (POST, PUT, DELETE) as needed
+    - Consider adding logging functionality for API requests and responses
+    - Implement a method to refresh the API key if needed
+#>
+class PSTenableIE {
+    #region Properties
+    [string]$ApiKey
+    [string]$TenantFqdn
+    [string]$ContentType
+    [string]$ProfileId
+    [string]$InfrastructureId
+    [string]$DirectoryId
+    [string]$Version = "1.2"
+    [string]$Author = "Ray Storer"
+    [string]$Copyright = "Copyright (c) 2025 Ray Storer. All rights reserved."
+    [string]$Description = "Class for interacting with the Tenable REST API."
+    #endregion
+
+    PSTenableIE(
+        [string]$apiKey,
+        [string]$tenantFqdn,
+        [string]$contentType,
+        [int]$profileId,
+        [int]$infrastructureId,
+        [int]$directoryId) {
+        # Constructor to initialize the API key and base URL
+        if (-not $apiKey) {
+            throw "API key is required."
+        }
+        if (-not $tenantFqdn) {
+            throw "Tenant FQDN is required."
+        }
+
+        $this.ApiKey = $apiKey
+        $this.TenantFqdn = $tenantFqdn
+        if (-not $contentType) {
+            $this.ContentType = "application/json"
+        } else {
+            $this.ContentType = $contentType
+        }
+        if (-not $profileId) {
+            $this.ProfileId = "1"
+        } else {
+            $this.ProfileId = $profileId.ToString()
+        }
+        if (-not $infrastructureId) {
+            $this.InfrastructureId = "1"
+        } else {
+            $this.InfrastructureId = $infrastructureId.ToString()
+        }
+        if (-not $directoryId) {
+            $this.DirectoryId = "1"
+        } else {
+            $this.DirectoryId = $directoryId.ToString()
+        }
+    }
+
+    static [PSTenableIE] ConstructWithDefaults(
+        [string]$apiKey,
+        [string]$tenantFqdn) {
+        # Static method to create an instance of the class with default values
+        return [PSTenableIE]::new($apiKey, $tenantFqdn, "application/json", 1, 1, 1)
+    }
+
+    [string]About() {
+        <#
+        .SYNOPSIS
+            Returns a string describing the PSTenableIE class.
+        #>
+        return "Version: $($this.Version)`nAuthor: $($this.Author)`nCopyright: $($this.Copyright)`nDescription: $($this.Description)`n"
+    }
+
+    [System.Collections.ArrayList]GetPagedResults(
+        $url,
+        $headers=@{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey}) {
+        <#
+        .SYNOPSIS
+            This method retrieves paginated results from the Tenable REST API.
+        #>
+        if (-not $url) {
+            throw "URL is required."
+        }
+
+        $results = New-Object System.Collections.ArrayList
+
+        $response = Invoke-WebRequest -Method Get -UseBasicParsing -Uri $url `
+            -Headers $headers -ContentType $this.ContentType
+    
+        if ($response.StatusCode -ne 200) {
+            Write-Error "Failed to retrieve data from Tenable API. Status code: $($response.StatusCode)"
+            return $null
+        }
+    
+        [int]$totalResults = $response.Headers.'x-pagination-total-count'[0]
+        [int]$pageSize = $response.Headers.'x-pagination-per-page'[0]
+        [int]$numberOfPages = [math]::Ceiling($totalResults / $pageSize)
+    
+        $results.AddRange( ($response.Content | ConvertFrom-Json) ) | Out-Null
+        if ($totalResults -gt $pageSize) {
+            for ($i = 2; $i -le $numberOfPages; $i++) {
+                $pageUrl = $url + "?page=$i"
+                $response = Invoke-WebRequest -Method Get -UseBasicParsing -Uri $pageUrl `
+                    -Headers $script:headers -ContentType $script:ContentType
+                
+                if ($response.StatusCode -ne 200) {
+                    Write-Error "Failed to retrieve data from Tenable API. Status code: $($response.StatusCode)"
+                    return $null
+                }
+                $results.AddRange( ($response.Content | ConvertFrom-Json) ) | Out-Null
+            }
+        }
+    
+        return $results   
+    }
+
+    [System.Collections.ArrayList]GetAllDirectoryDeviances(
+        [string]$infrastructureId=$this.InfrastructureId,
+        [string]$directoryId=$this.DirectoryId) {
+        <#
+        .SYNOPSIS
+            Retrieves all deviances from the Tenable REST API for the specified directory infrastructure.
+        .LINK https://developer.tenable.com/reference/get_api-infrastructures-infrastructureid-directories-directoryid-deviances
+        .NOTES
+            TODO:
+                1. Possibly implement the following query parameters:
+                    - perPage [string]
+                    - batchSize [string]
+                    - lastIdentifierSeen [string]
+                    - resolved [string]
+        #>
+        [string]$url = "https://$($this.TenantFqdn)/api/infrastructures/$($infrastructureId)/directories/$($directoryId)/deviances"
+        return $this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey})
+    }
+
+    [System.Collections.ArrayList]GetSpecificCheckerDeviances(
+        [string]$checkerId,
+        [string]$profileId=$this.ProfileId,
+        [string]$infrastructureId=$this.InfrastructureId,
+        [string]$directoryId=$this.DirectoryId) {
+        <#
+        .SYNOPSIS
+            Retrieves all deviances from the Tenable REST API for the specified checker id, profile id, directory id, and infrastructure id.
+        .LINK https://developer.tenable.com/reference/get_api-profiles-profileid-infrastructures-infrastructureid-directories-directoryid-checkers-checkerid-deviances
+        .NOTES
+            TODO:
+                1. Possibly implement the following query parameters:
+                    - perPage [string]
+                    - page [string]
+        #>
+        if (-not $checkerId) {
+            throw "Checker ID is required."
+        }
+        [string]$url = "$($this.TenantFqdn)/api/profiles/$($profileId)/infrastructures/$($infrastructureId)/directories/$($directoryId)/checkers/$($checkerId)/deviances"
+        return $this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey})
+    }
+
+    [PSCustomObject[]]UpdateADObjectByCheckerId(
+        [string]$ADObjectId,
+        [string]$CheckerId,
+        [string]$IgnoreUntil
+    ) {
+        <#
+        .SYNOPSIS
+            Updates a ignoreUntil date of the specific ADObject for the specified checker in the Tenable API.
+        .PARAMETER CheckerId
+            The ID of the deviances to update.
+        .PARAMETER ADObjectId
+            The ID of the ADObject to update.
+        .PARAMETER IgnoreUntil
+            The UTC date to ignore this ADObject for this check in the form of 2025-01-31T23:59:59Z
+        #>
+        $url = "https://$($this.TenantFqdn)/api/profiles/$($this.ProfileId)/checkers/$($CheckerId)/ad-objects//$($ADObjectId)/deviances"
+        $body = @{
+            ignoreUntil = $IgnoreUntil
+        } | ConvertTo-Json
+
+        $response = Invoke-WebRequest -Method Patch -UseBasicParsing -Uri $url `
+            -Headers @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey} `
+            -ContentType $this.ContentType -Body $body
+
+        if ($response.StatusCode -ne 200) {
+            Write-Error "Failed to update deviances. Status code: $($response.StatusCode)"
+            return $null
+        }
+
+        return ($response.Content | ConvertFrom-Json)
+    }
+}
+
+
+function New-PSTenableIE {
+    <#
+    .SYNOPSIS
+        Creates a new instance of the PSTenableIE class.
+    .PARAMETER ApiKey
+        The API key for authentication.
+    .PARAMETER TenantFqdn
+        The FQDN of the Tenable tenant.
+    .PARAMETER ContentType
+        The content type for the API requests. Defaults to "application/json".
+    .PARAMETER ProfileId
+        The profile ID for the API requests. Defaults to 1.
+    .PARAMETER InfrastructureId
+        The infrastructure ID for the API requests. Defaults to 1.
+    .PARAMETER DirectoryId
+        The directory ID for the API requests. Defaults to 1.
+    #>
+    param (
+        [Parameter(Mandatory=$true,HelpMessage="API key is required.")]
+        [ValidateNotNullOrEmpty()]
+        [string]$ApiKey,
+        [Parameter(Mandatory=$true,HelpMessage="Tenant FQDN is required.")]
+        [ValidateNotNullOrEmpty()]
+        [string]$TenantFqdn,
+        [Parameter(Mandatory=$false,HelpMessage="Content type for API requests. Defaults to 'application/json'.")]
+        [string]$ContentType = "application/json",
+        [Parameter(Mandatory=$false,HelpMessage="Profile ID for API requests. Defaults to 1.")]
+        [ValidateRange(1, [int]::MaxValue)]
+        [int]$ProfileId = 1,
+        [Parameter(Mandatory=$false,HelpMessage="Infrastructure ID for API requests. Defaults to 1.")]
+        [ValidateRange(1, [int]::MaxValue)]
+        [int]$InfrastructureId = 1,
+        [Parameter(Mandatory=$false,HelpMessage="Directory ID for API requests. Defaults to 1.")]
+        [ValidateRange(1, [int]::MaxValue)]
+        [int]$DirectoryId = 1
+    )
+
+    return [PSTenableIE]::new($ApiKey, $TenantFqdn, $ContentType, $ProfileId, $InfrastructureId, $DirectoryId)
+}
+
+function Get-AllDirectoryDeviances {
+    <#
+    .SYNOPSIS
+        Retrieves all directory deviances from the Tenable API.
+    .PARAMETER Tapi
+        The PSTenableIE object.
+    #>
+    param (
+        [Parameter(Mandatory=$true,HelpMessage="PSTenableIE object is required.")]
+        [PSTenableIE]$Tapi
+    )
+
+    return $Tapi.GetAllDirectoryDeviances($Tapi.InfrastructureId, $Tapi.DirectoryId)
+}
+
+function Get-SpecificCheckerDeviances {
+    <#
+    .SYNOPSIS
+        Retrieves specific checker deviances from the Tenable API.
+    .PARAMETER Tapi
+        The PSTenableIE object.
+    .PARAMETER CheckerId
+        The ID of the checker.
+    #>
+    param (
+        [Parameter(Mandatory=$true,HelpMessage="PSTenableIE object is required.")]
+        [PSTenableIE]$Tapi,
+        [Parameter(Mandatory=$true,HelpMessage="Checker ID is required and needs a value greater than 0.")]
+        [ValidateRange(1, [int]::MaxValue)]
+        [uint]$CheckerId
+    )
+
+    return $Tapi.GetSpecificCheckerDeviances($CheckerId.ToString(), $Tapi.ProfileId, $Tapi.InfrastructureId, $Tapi.DirectoryId)
+}
+
+function Update-ADObjectByCheckerId {
+    <#
+    .SYNOPSIS
+        Updates the ignoreUntil date of a specific ADObject for the specified checker in the Tenable API.
+    .PARAMETER Tapi
+        The PSTenableIE object.
+    .PARAMETER CheckerId
+        The ID of the checker.
+    .PARAMETER ADObjectId
+        The ID of the ADObject to update.
+    .PARAMETER IgnoreUntil
+        The UTC date to ignore this ADObject for this check in the form of 2025-01-31T23:59:59Z
+    #>
+    param (
+        [Parameter(Mandatory=$true,HelpMessage="PSTenableIE object is required.")]
+        [PSTenableIE]$Tapi,
+        [Parameter(Mandatory=$true,HelpMessage="Checker ID is required and needs a value greater than 0.")]
+        [ValidateRange(1, [int]::MaxValue)]
+        [uint]$CheckerId,
+        [Parameter(Mandatory=$true,HelpMessage="ADObject ID is required and needs a value greater than 0.")]
+        [ValidateRange(1, [int]::MaxValue)]
+        [uint]$ADObjectId,
+        [Parameter(Mandatory=$true,HelpMessage="IgnoreUntil date is required.")]
+        [ValidateScript({[DateTime]::Now.AddDays(1) -le $_ -and $_ -lt [DateTime]::Now.AddYears(1)})]
+        [datetime]$IgnoreUntil
+    )
+
+    [string]$StrIgnoreUntil = $IgnoreUntil.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    return $Tapi.UpdateADObjectByCheckerId($ADObjectId.ToString(), $CheckerId.ToString(), $StrIgnoreUntil) 
+}
