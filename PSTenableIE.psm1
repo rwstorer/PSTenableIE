@@ -197,7 +197,7 @@ class PSTenableIE {
         if (-not $checkerId) {
             throw "Checker ID is required."
         }
-        [string]$url = "$($this.TenantFqdn)/api/profiles/$($profileId)/infrastructures/$($infrastructureId)/directories/$($directoryId)/checkers/$($checkerId)/deviances"
+        [string]$url = "https://$($this.TenantFqdn)/api/profiles/$($profileId)/infrastructures/$($infrastructureId)/directories/$($directoryId)/checkers/$($checkerId)/deviances"
         return $this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey})
     }
 
@@ -304,7 +304,7 @@ function Get-SpecificCheckerDeviances {
         [PSTenableIE]$Tapi,
         [Parameter(Mandatory=$true,HelpMessage="Checker ID is required and needs a value greater than 0.")]
         [ValidateRange(1, [int]::MaxValue)]
-        [uint]$CheckerId
+        [uint32]$CheckerId
     )
 
     return $Tapi.GetSpecificCheckerDeviances($CheckerId.ToString(), $Tapi.ProfileId, $Tapi.InfrastructureId, $Tapi.DirectoryId)
@@ -328,10 +328,10 @@ function Update-ADObjectByCheckerId {
         [PSTenableIE]$Tapi,
         [Parameter(Mandatory=$true,HelpMessage="Checker ID is required and needs a value greater than 0.")]
         [ValidateRange(1, [int]::MaxValue)]
-        [uint]$CheckerId,
+        [uint32]$CheckerId,
         [Parameter(Mandatory=$true,HelpMessage="ADObject ID is required and needs a value greater than 0.")]
         [ValidateRange(1, [int]::MaxValue)]
-        [uint]$ADObjectId,
+        [uint32]$ADObjectId,
         [Parameter(Mandatory=$true,HelpMessage="IgnoreUntil date is required.")]
         [ValidateScript({[DateTime]::Now.AddDays(1) -le $_ -and $_ -lt [DateTime]::Now.AddYears(1)})]
         [datetime]$IgnoreUntil
