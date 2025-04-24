@@ -123,4 +123,4 @@ param (
 $tapi = New-PSTenableIE -ApiKey "your_api_key" -TenantFqdn "your_tenant_fqdn" -ContentType "application/json" -ProfileId 1 -InfrastructureId 1 -DirectoryId 1
 
 # In my environment, this checker ID is 50. Yours may differ.
-Get-PasswdIssues -Deviances (Get-SpecificCheckerDeviances $tapi -CheckerId 50 -UseLocalDatetime=$false)
+Get-PasswdIssues -Deviances (Get-SpecificCheckerDeviances $tapi -CheckerId 50) -UseLocalDatetime=$false
