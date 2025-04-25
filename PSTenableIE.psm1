@@ -118,8 +118,9 @@ class PSTenableIE {
     }
 
     [System.Collections.ArrayList]GetPagedResults(
-        $url,
-        $headers=@{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey}) {
+        [string]$url,
+        [System.Collections.Hashtable]$headers,
+        [string]$method) {
         <#
         .SYNOPSIS
             This method retrieves paginated results from the Tenable REST API.
@@ -127,17 +128,28 @@ class PSTenableIE {
         if (-not $url) {
             throw "URL is required."
         }
+        if (-not $headers) {
+            throw "Headers are required."
+        }
+        if (-not $method) {
+            throw "HTTP method is required."
+        }
 
         $results = New-Object System.Collections.ArrayList
+        
+        $wrp = @{
+            Method = $method
+            UseBasicParsing = $true
+            Uri = $url
+            Headers = $headers
+            ContentType = $this.ContentType
+        }
 
-        $response = Invoke-WebRequest -Method Get -UseBasicParsing -Uri $url `
-            -Headers $headers -ContentType $this.ContentType
-    
+        $response = Invoke-WebRequest @wrp
         if ($response.StatusCode -ne 200) {
             Write-Error "Failed to retrieve data from Tenable API. Status code: $($response.StatusCode)"
             return $null
-        }
-    
+        }        
         [int]$totalResults = $response.Headers.'x-pagination-total-count'[0]
         [int]$pageSize = $response.Headers.'x-pagination-per-page'[0]
         [int]$numberOfPages = [math]::Ceiling($totalResults / $pageSize)
@@ -146,13 +158,19 @@ class PSTenableIE {
         if ($totalResults -gt $pageSize) {
             for ($i = 2; $i -le $numberOfPages; $i++) {
                 $pageUrl = $url + "?page=$i"
-                $response = Invoke-WebRequest -Method Get -UseBasicParsing -Uri $pageUrl `
-                    -Headers $script:headers -ContentType $script:ContentType
-                
+                $wrp2 = @{
+                    Method = $method
+                    UseBasicParsing = $true
+                    Uri = $pageUrl
+                    Headers = $headers
+                    ContentType = $this.ContentType
+                }
+                $response = Invoke-WebRequest @wrp2
                 if ($response.StatusCode -ne 200) {
                     Write-Error "Failed to retrieve data from Tenable API. Status code: $($response.StatusCode)"
                     return $null
                 }
+                
                 $results.AddRange( ($response.Content | ConvertFrom-Json) ) | Out-Null
             }
         }
@@ -160,9 +178,7 @@ class PSTenableIE {
         return $results   
     }
 
-    [System.Collections.ArrayList]GetAllDirectoryDeviances(
-        [string]$infrastructureId=$this.InfrastructureId,
-        [string]$directoryId=$this.DirectoryId) {
+    [System.Collections.ArrayList]GetAllDirectoryDeviances() {
         <#
         .SYNOPSIS
             Retrieves all deviances from the Tenable REST API for the specified directory infrastructure.
@@ -175,15 +191,11 @@ class PSTenableIE {
                     - lastIdentifierSeen [string]
                     - resolved [string]
         #>
-        [string]$url = "https://$($this.TenantFqdn)/api/infrastructures/$($infrastructureId)/directories/$($directoryId)/deviances"
-        return $this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey})
+        [string]$url = "https://$($this.TenantFqdn)/api/infrastructures/$($this.InfrastructureId)/directories/$($this.DirectoryId)/deviances"
+        return $this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey}, 'GET')
     }
 
-    [System.Collections.ArrayList]GetSpecificCheckerDeviances(
-        [string]$checkerId,
-        [string]$profileId=$this.ProfileId,
-        [string]$infrastructureId=$this.InfrastructureId,
-        [string]$directoryId=$this.DirectoryId) {
+    [System.Collections.ArrayList]GetSpecificCheckerDeviances([string]$checkerId) {
         <#
         .SYNOPSIS
             Retrieves all deviances from the Tenable REST API for the specified checker id, profile id, directory id, and infrastructure id.
@@ -197,8 +209,9 @@ class PSTenableIE {
         if (-not $checkerId) {
             throw "Checker ID is required."
         }
-        [string]$url = "https://$($this.TenantFqdn)/api/profiles/$($profileId)/infrastructures/$($infrastructureId)/directories/$($directoryId)/checkers/$($checkerId)/deviances"
-        return $this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey})
+
+        [string]$url = "https://$($this.TenantFqdn)/api/profiles/$($this.ProfileId)/infrastructures/$($this.InfrastructureId)/directories/$($this.DirectoryId)/checkers/$($checkerId)/deviances"
+        return $this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey}, 'GET')
     }
 
     [PSCustomObject[]]UpdateADObjectByCheckerId(
@@ -216,6 +229,15 @@ class PSTenableIE {
         .PARAMETER IgnoreUntil
             The UTC date to ignore this ADObject for this check in the form of 2025-01-31T23:59:59Z
         #>
+        if (-not $ADObjectId) {
+            throw "ADObject ID is required."
+        }
+        if (-not $CheckerId) {
+            throw "Checker ID is required."
+        }
+        if (-not $IgnoreUntil) {
+            throw "IgnoreUntil date is required."
+        }
         $url = "https://$($this.TenantFqdn)/api/profiles/$($this.ProfileId)/checkers/$($CheckerId)/ad-objects//$($ADObjectId)/deviances"
         $body = @{
             ignoreUntil = $IgnoreUntil
@@ -275,7 +297,7 @@ function New-PSTenableIE {
     return [PSTenableIE]::new($ApiKey, $TenantFqdn, $ContentType, $ProfileId, $InfrastructureId, $DirectoryId)
 }
 
-function Get-AllDirectoryDeviances {
+function Get-PSTIEAllDirectoryDeviances {
     <#
     .SYNOPSIS
         Retrieves all directory deviances from the Tenable API.
@@ -290,7 +312,7 @@ function Get-AllDirectoryDeviances {
     return $Tapi.GetAllDirectoryDeviances($Tapi.InfrastructureId, $Tapi.DirectoryId)
 }
 
-function Get-SpecificCheckerDeviances {
+function Get-PSTIESpecificCheckerDeviances {
     <#
     .SYNOPSIS
         Retrieves specific checker deviances from the Tenable API.
@@ -307,10 +329,49 @@ function Get-SpecificCheckerDeviances {
         [uint32]$CheckerId
     )
 
-    return $Tapi.GetSpecificCheckerDeviances($CheckerId.ToString(), $Tapi.ProfileId, $Tapi.InfrastructureId, $Tapi.DirectoryId)
+    return $Tapi.GetSpecificCheckerDeviances($CheckerId.ToString())
 }
 
-function Update-ADObjectByCheckerId {
+function Get-PSTIEPagedData {
+    <#
+    .SYNOPSIS
+        Get paged data from the Tenable IE API
+    .PARAMETER Tapi
+       The PSTenableIE object
+    .PARAMETER UrlPath
+        The Tenable API URL path and query string (after https://customer.tenable.ad/)
+    .PARAMETER ContentType
+        Defaults to 'application/json'
+    .PARAMETER Method
+        Defaults to 'GET'
+     .PARAMETER Headers
+        Defaults to @{'accept'=$Tapi.ContentType; 'x-api-key'=$Tapi.ApiKey}
+    #>
+    param (
+        [Parameter(Mandatory=$true,HelpMessage="PSTenableIE object is required.")]
+        [PSTenableIE]$Tapi,
+        [Parameter(Mandatory=$true,HelpMessage="The Tenable API URL path and query string (after https://customer.tenable.ad/")]
+        [string]$UrlPath,
+        [Parameter(Mandatory=$false,HelpMessage="defaults to 'application/json'")]
+        [string]$ContentType,
+        [Parameter(Mandatory=$false,HelpMessage="defaults to 'GET'")]
+        [string]$Method='GET',
+        [Parameter(Mandatory=$false,HelpMessage="Headers, if different from default")]
+        [System.Collections.Hashtable]$headers
+    )
+    if (-not $headers) {
+        $headers = @{'accept'=$Tapi.ContentType; 'x-api-key'=$Tapi.ApiKey}
+    }
+    if (-not $ContentType) {
+        $ContentType=$Tapi.ContentType
+    }
+    else {
+        $Tapi.ContentType = $ContentType
+    }
+    $Tapi.GetPagedResults("https://$($tapi.TenantFQDN)/$($UrlPath)", $headers, $method)
+}
+
+function Update-PSTIEADObjectByCheckerId {
     <#
     .SYNOPSIS
         Updates the ignoreUntil date of a specific ADObject for the specified checker in the Tenable API.
