@@ -5,7 +5,7 @@
     Description = 'A PowerShell module using a class and exported functions to work with the Tenable IE REST API'
     RootModule = 'PSTenableIE.psm1'
 
-    FunctionsToExport = @('Get-SpecificCheckerDeviances','Get-AllDirectoryDeviances','New-PSTenableIE','Update-ADObjectByCheckerId')
+    FunctionsToExport = @('Get-PSTIEPagedData','Get-PSTIESpecificCheckerDeviances','Get-PSTIEAllDirectoryDeviances','New-PSTenableIE','Update-PSTIEADObjectByCheckerId')
 
     Copyright = '(c) 2025 Ray Storer. All rights reserved.'
     PowerShellVersion = '5.1'
