@@ -3,7 +3,7 @@
 # If you are using PowerShell 5.1 or earlier, uncomment the following line to load the assembly:
 # Add-Type -AssemblyName 'System.Data'
 
-Import-Module PSTenableIE
+Import-Module .\PSTenableIE.psd1
 
 function Get-PasswdIssues() {
 [CmdletBinding()]
@@ -13,6 +13,8 @@ param (
     [Parameter(Mandatory=$false)]
     [bool]$UseLocalDatetime=$false
 )
+    New-Variable -Name 'BLANK_PASSOWRD' -Value 'R-BLANK-NT-USER-HASH' -Option Constant -Scope local
+    New-Variable -Name 'BREACHED_PASSWORD' -Value 'R-BREACHED-PASSWORD' -Option Constant -Scope local
     $dt = New-Object System.Data.DataTable
     $dt.TableName = 'Deviances'
     $dt.Columns.Add('ID', [int]) | Out-Null
@@ -26,6 +28,7 @@ param (
     [string]$PasswordHashPrefix = ''
 
     [int]$id = 0
+    $reasons = Get-PSTIECheckerReasons -Tapi $tapi -CheckerId $CHECKER_ID
     foreach ($deviance in $Deviances) {
         $Names.Clear()
         $Issue = ''
@@ -48,48 +51,43 @@ param (
             $Names.Add($cnAttr.value) | Out-Null
         }
 
-        if ($deviance.description.template.Contains('blank')) {
-            $Issue = 'blank'
-        } elseif ($deviance.description.template.Contains('breached')) {
-            $Issue = 'breached'
-        } elseif ($deviance.description.template.Contains('privileged')) {
-            $Issue = 'shared_privileged'
-        } elseif ($deviance.description.template.Contains('shared')) {
-            $Issue = 'shared'
-        }
+        $Issue = ($reasons[$deviance.reasonId]).codename
+
         foreach ($name in $Names) {
-            if ($Issue -eq 'breached') {
-                [System.Data.DataRow[]]$sr = $dt.Select("Name = '$($name)' AND Issue = 'blank'")
+            if ($Issue -eq $BREACHED_PASSWORD) {
+                [System.Data.DataRow[]]$sr = $dt.Select("Name = '$($name)' AND Issue = '$($BLANK_PASSOWRD)'")
                 if ($sr.Count -eq 0) { # I do not want the breached record if I already have a blank record
                     [System.Data.DataRow]$row = $dt.NewRow()
                     $row.ID = $id++
                     $row.Name = $name
-                    $row.Issue = 'breached'
+                    $row.Issue = $Issue
+                    # the eventDate is in UTC by default
                     if ($UseLocalDatetime) {
-                        $row.EventDate = $deviance.eventDate.Date.ToLocalTime()
+                        $row.EventDate = (Get-Date -Date $deviance.eventDate).ToLocalTime()
                     } else {
-                        $row.EventDate = $deviance.eventDate.Date
+                        $row.EventDate = $deviance.eventDate
                     }
                     $row.PasswordHashPrefix = $PasswordHashPrefix
                     $dt.Rows.Add($row) | Out-Null
                 } 
-            } elseif ($Issue -eq 'blank') {
-                [System.Data.DataRow[]]$sr = $dt.Select("Name = '$($name)' AND Issue = 'breached'")
+            } elseif ($Issue -eq $BLANK_PASSOWRD) {
+                [System.Data.DataRow[]]$sr = $dt.Select("Name = '$($name)' AND Issue = '$($BREACHED_PASSWORD)'")
                 if ($sr.Count -eq 0) {
                     [System.Data.DataRow]$row = $dt.NewRow()
                     $row.ID = $id++
                     $row.Name = $name
-                    $row.Issue = 'blank'
+                    $row.Issue = $Issue
+                    # the eventDate is in UTC by default
                     if ($UseLocalDatetime) {
-                        $row.EventDate = $deviance.eventDate.Date.ToLocalTime()
+                        $row.EventDate = $deviance.eventDate.ToLocalTime()
                     } else {
-                        $row.EventDate = $deviance.eventDate.Date
+                        $row.EventDate = $deviance.eventDate
                     }
                     $row.PasswordHashPrefix = $PasswordHashPrefix
                     $dt.Rows.Add($row) | Out-Null
                 } else { # if the password is blank, I don't need the breached record
                 [System.Data.DataRow[]]$upd = $dt.Select("ID = $($sr[0].ID)")[0]
-                    $upd[0].Issue = 'blank'
+                    $upd[0].Issue = $BLANK_PASSOWRD
                     $dt.AcceptChanges()
                 } 
             } else {
@@ -98,9 +96,9 @@ param (
                 $row.Name = $name
                 $row.Issue = $Issue
                 if ($UseLocalDatetime) {
-                    $row.EventDate = $deviance.eventDate.Date.ToLocalTime()
+                    $row.EventDate = (Get-Date -Date $deviance.eventDate).ToLocalTime()
                 } else {
-                    $row.EventDate = $deviance.eventDate.Date
+                    $row.EventDate = $deviance.eventDate
                 }
                 $row.PasswordHashPrefix = $PasswordHashPrefix
                 $dt.Rows.Add($row) | Out-Null
@@ -124,5 +122,6 @@ param (
 $tapi = New-PSTenableIE -ApiKey $env:TENABLE_API_KEY -TenantFqdn $env:TENABLE_API_FQDN -ContentType "application/json" -ProfileId 1 -InfrastructureId 1 -DirectoryId 1
 
 # In my environment, this checker ID is 50. Yours may differ.
-[System.Collections.ArrayList]$deviances = Get-PSTIESpecificCheckerDeviances -Tapi $tapi -CheckerId 50
-Get-PasswdIssues -Deviances $deviances -UseLocalDatetime=$false
+New-Variable -Name 'CHECKER_ID' -Value 50 -Option Constant -Scope script
+[System.Collections.ArrayList]$deviances = Get-PSTIESpecificCheckerDeviances -Tapi $tapi -CheckerId $CHECKER_ID
+Get-PasswdIssues -Deviances $deviances -UseLocalDatetime $false

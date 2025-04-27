@@ -40,6 +40,8 @@
     1.6         2025-04-05  Ray Storer     Added Get-AllDirectoryDeviances and Get-SpecificCheckerDeviances functions
     1.7         2025-04-05  Ray Storer     Added usage examples for the class and functions
     1.8         2025-04-05  Ray Storer     Added Update-ADObjectByCheckerId function
+    1.8.1       2025-04-20  Ray Storer     Added GetCheckerReasons function and Get-PSTIECheckerReasons function and updated the module manifest
+    1.8.2       2025-04-27  Ray Storer     Updated GetCheckerReasons function to return a hashtable of reasons instead of an array list
 
 TODO:
     - Implement additional error handling for API requests
@@ -57,7 +59,7 @@ class PSTenableIE {
     [string]$ProfileId
     [string]$InfrastructureId
     [string]$DirectoryId
-    [string]$Version = "1.2"
+    [string]$Version = "1.8.1"
     [string]$Author = "Ray Storer"
     [string]$Copyright = "Copyright (c) 2025 Ray Storer. All rights reserved."
     [string]$Description = "Class for interacting with the Tenable REST API."
@@ -149,7 +151,12 @@ class PSTenableIE {
         if ($response.StatusCode -ne 200) {
             Write-Error "Failed to retrieve data from Tenable API. Status code: $($response.StatusCode)"
             return $null
-        }        
+        }
+        # Check if the response contains pagination headers
+        if (-not $response.Headers.'x-pagination-total-count') {
+            $results.AddRange( ($response.Content | ConvertFrom-Json) ) | Out-Null
+            return $results
+        } # else
         [int]$totalResults = $response.Headers.'x-pagination-total-count'[0]
         [int]$pageSize = $response.Headers.'x-pagination-per-page'[0]
         [int]$numberOfPages = [math]::Ceiling($totalResults / $pageSize)
@@ -212,6 +219,29 @@ class PSTenableIE {
 
         [string]$url = "https://$($this.TenantFqdn)/api/profiles/$($this.ProfileId)/infrastructures/$($this.InfrastructureId)/directories/$($this.DirectoryId)/checkers/$($checkerId)/deviances"
         return $this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey}, 'GET')
+    }
+
+    [System.Collections.Hashtable]GetCheckerReasons([string]$checkerId) {
+        <#
+        .SYNOPSIS
+            Retrieves all reasons from the Tenable REST API for the specified checker id, profile id, directory id, and infrastructure id.
+        .LINK https://developer.tenable.com/reference/get_api-profiles-profileid-infrastructures-infrastructureid-directories-directoryid-checkers-checkerid-reasons
+        #>
+        if (-not $checkerId) {
+            throw "Checker ID is required."
+        }
+
+        [string]$url = "https://$($this.TenantFqdn)/api/profiles/$($this.ProfileId)/checkers/$($checkerId)/reasons"
+        [System.Collections.ArrayList]$alReasons = $this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey}, 'GET')
+        [System.Collections.Hashtable]$hashtable = @{}
+        foreach ($reason in $alReasons) {
+            if ($hashtable.ContainsKey($reason.ID)) {
+                Write-Verbose "Duplicate reason ID found: $($reason.ID) - skipping."
+                continue
+            }
+            $hashtable[$reason.ID] = $reason
+        }
+        return $hashtable
     }
 
     [PSCustomObject[]]UpdateADObjectByCheckerId(
@@ -310,6 +340,26 @@ function Get-PSTIEAllDirectoryDeviances {
     )
 
     return $Tapi.GetAllDirectoryDeviances($Tapi.InfrastructureId, $Tapi.DirectoryId)
+}
+
+function Get-PSTIECheckerReasons {
+    <#
+    .SYNOPSIS
+        Retrieves checker reasons from the Tenable API.
+    .PARAMETER Tapi
+        The PSTenableIE object.
+    .PARAMETER CheckerId
+        The ID of the checker.
+    #>
+    param (
+        [Parameter(Mandatory=$true,HelpMessage="PSTenableIE object is required.")]
+        [PSTenableIE]$Tapi,
+        [Parameter(Mandatory=$true,HelpMessage="Checker ID is required and needs a value greater than 0.")]
+        [ValidateRange(1, [int]::MaxValue)]
+        [uint32]$CheckerId
+    )
+
+    return $Tapi.GetCheckerReasons($CheckerId.ToString())
 }
 
 function Get-PSTIESpecificCheckerDeviances {
