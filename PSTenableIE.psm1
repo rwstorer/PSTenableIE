@@ -59,7 +59,7 @@ class PSTenableIE {
     [string]$ProfileId
     [string]$InfrastructureId
     [string]$DirectoryId
-    [string]$Version = "1.8.1"
+    [string]$Version = "1.8.2"
     [string]$Author = "Ray Storer"
     [string]$Copyright = "Copyright (c) 2025 Ray Storer. All rights reserved."
     [string]$Description = "Class for interacting with the Tenable REST API."
@@ -243,6 +243,7 @@ class PSTenableIE {
         }
         return $hashtable
     }
+
 
     [PSCustomObject[]]UpdateADObjectByCheckerId(
         [string]$ADObjectId,
