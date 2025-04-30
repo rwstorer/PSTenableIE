@@ -51,13 +51,17 @@ param (
     $dt.Columns.Add('ComputerCn', [string]) | Out-Null # r-key-cred-roca
 
     [int]$id = 0
-    [int]$reasonId = 0
+    [Int64]$reasonId = 0
     [string]$reason = ''
     [int]$idx = -1
     [int]$idx2 = -1
     [int]$idx3 = -1
+    [Int64]$R_KEY_CRED_ROCA = 59000
+    [Int64]$R_KEY_CRED_ACL = 59005
+    [Int64]$R_KEY_CRED_OWNER = 59006    
     foreach ($deviance in $Deviances) {
         $id++
+        # the reasonId is a 64-bit integer, we may need to upcast 32-bit integers to 64-bit integers
         $reasonId = $deviance.reasonId
         $reason = ($reasons[$reasonId]).codename
         $idx = -1
@@ -72,8 +76,9 @@ param (
         }
         $row.reason = $reason
         $row.adObjectId = $deviance.adObjectId
+
         switch ($reasonId) {
-            { $_ -eq 59000 } { # r-key-cred-roca
+            { $_ -eq $R_KEY_CRED_ROCA } {
                 $idx = [Array]::IndexOf($deviance.attributes.name, 'KeyId')
                 $idx2 = [Array]::IndexOf($deviance.attributes.name, 'DeviceId')
                 $idx3 = [Array]::IndexOf($deviance.attributes.name, 'ComputerCn')
@@ -86,7 +91,7 @@ param (
                 $row.DeviceId = $deviance.attributes[$idx2].value
                 $row.ComputerCn = $deviance.attributes[$idx3].value
             }
-            { $_ -eq 59005 } { # r-key-cred-acl
+            { $_ -eq $R_KEY_CRED_ACL } { 
                 $idx = [Array]::IndexOf($deviance.attributes.name, 'ObjectName')
                 $idx2 = [Array]::IndexOf($deviance.attributes.name, 'DangerousAceList')
                 $row.AccountCn = [DBNull]::Value
@@ -98,7 +103,7 @@ param (
                 $row.ObjectName = $deviance.attributes[$idx].value
                 $row.DangerousAceList = $deviance.attributes[$idx2].value
             }
-            { $_ -eq 59006 } { # r-key-cred-owner
+            { $_ -eq $R_KEY_CRED_OWNER } {
                 $idx = [Array]::IndexOf($deviance.attributes.name, 'AccountCn')
                 $idx2 = [Array]::IndexOf($deviance.attributes.name, 'SID')
                 $idx3 = [Array]::IndexOf($deviance.attributes.name, 'SidCn')

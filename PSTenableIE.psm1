@@ -235,11 +235,11 @@ class PSTenableIE {
         [System.Collections.ArrayList]$alReasons = $this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey}, 'GET')
         [System.Collections.Hashtable]$hashtable = @{}
         foreach ($reason in $alReasons) {
-            if ($hashtable.ContainsKey($reason.ID)) {
-                Write-Verbose "Duplicate reason ID found: $($reason.ID) - skipping."
+            if ($hashtable.ContainsKey($reason.id)) {
+                Write-Verbose "Duplicate reason ID found: $($reason.id) - skipping."
                 continue
             }
-            $hashtable[$reason.ID] = $reason
+            $hashtable[$reason.id] = $reason
         }
         return $hashtable
     }
