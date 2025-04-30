@@ -61,7 +61,7 @@ param (
     foreach ($deviance in $Deviances) {
         $id++
         $reasonId = $deviance.reasonId
-        $reason = $reasons[$reasonId].codename
+        $reason = ($reasons[$reasonId]).codename
         $idx = -1
         $idx2 = -1
         $idx3 = -1
