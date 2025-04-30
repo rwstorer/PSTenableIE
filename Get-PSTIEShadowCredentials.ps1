@@ -50,8 +50,6 @@ param (
     $dt.Columns.Add('DeviceId', [string]) | Out-Null # r-key-cred-roca
     $dt.Columns.Add('ComputerCn', [string]) | Out-Null # r-key-cred-roca
 
-    $reasons = Get-PSTIECheckerReasons -Tapi $tapi -CheckerId $CHECKER_ID
-
     [int]$id = 0
     [int]$reasonId = 0
     [string]$reason = ''
