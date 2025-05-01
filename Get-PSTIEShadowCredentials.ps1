@@ -31,6 +31,8 @@ param (
     [Parameter(Mandatory=$true)]
     [System.Collections.ArrayList]$Deviances,
     [Parameter(Mandatory=$false)]
+    [bool]$WantAdObjectType=$true,
+    [Parameter(Mandatory=$false)]
     [bool]$UseLocalDatetime=$false
 )
     [System.Collections.Hashtable]$reasons = Get-PSTIECheckerReasons -Tapi $tapi -CheckerId $CHECKER_ID
@@ -41,6 +43,7 @@ param (
     $dt.Columns.Add('EventDate', [datetime]) | Out-Null
     $dt.Columns.Add('reason', [string]) | Out-Null
     $dt.Columns.Add('adObjectId', [int]) | Out-Null
+    $dt.Columns.Add('ADObjectType', [string]) | Out-Null # computer, user
     $dt.Columns.Add('AccountCn', [string]) | Out-Null # r-key-cred-owner
     $dt.Columns.Add('SID', [string]) | Out-Null # r-key-cred-owner
     $dt.Columns.Add('SidCn', [string]) | Out-Null # r-key-cred-owner
@@ -121,6 +124,29 @@ param (
         $dt.Rows.Add($row) | Out-Null
     }
 
+    if ($WantAdObjectType) {
+        [hashtable]$adObjects = @{}
+        # get the ADObjectType for each adObjectId
+        foreach ($row in $dt.Rows) {
+            if (-not $adObjects.ContainsKey($row.adObjectId)) {
+                [PSCustomObject]$adObject = Get-PSTIEADObjectById -Tapi $tapi -AdObjectId $row.adObjectId
+                # get the samaccounttype for the adObjectId
+                $adObjects[$row.adObjectId] = ($adObject.objectAttributes | Where-Object { $_.name -eq 'samaccounttype' }).value
+            }
+            if ($adObjects[$row.adObjectId]) {
+                try {
+                    $row.BeginEdit()
+                    $row.ADObjectType = $adObjects[$row.adObjectId]
+                    $row.EndEdit()
+                } catch {
+                    Write-Host "Error setting ADObjectType for $($row.adObjectId): $($_.Exception.Message)"
+                }
+            } else {
+                $row.ADObjectType = [DBNull]::Value
+            }
+        }
+    }
+
     # emit the DataTable as a collection of PSCustomObjects
     foreach ($row in $dt.Rows) {
         [PSCustomObject]@{
@@ -128,6 +154,7 @@ param (
             EventDate = $row.EventDate
             reason = $row.reason
             adObjectId = $row.adObjectId
+            ADObjectType = $row.ADObjectType
             AccountCn = $row.AccountCn
             SID = $row.SID
             SidCn = $row.SidCn
@@ -145,4 +172,4 @@ $tapi = New-PSTenableIE -ApiKey $ApiKey -TenantFqdn $TenantFqdn -ContentType $Co
 # In my environment, this checker ID is 59. Yours may differ.
 [int]$CHECKER_ID = 59
 [System.Collections.ArrayList]$deviances = Get-PSTIESpecificCheckerDeviances -Tapi $tapi -CheckerId $CHECKER_ID
-Get-ShadowCredentials -Deviances $deviances -UseLocalDatetime $UseLocalDatetime
+Get-ShadowCredentials -Deviances $deviances -UseLocalDatetime $UseLocalDatetime -WantAdObjectType $true

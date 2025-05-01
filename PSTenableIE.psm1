@@ -42,6 +42,7 @@
     1.8         2025-04-05  Ray Storer     Added Update-ADObjectByCheckerId function
     1.8.1       2025-04-20  Ray Storer     Added GetCheckerReasons function and Get-PSTIECheckerReasons function and updated the module manifest
     1.8.2       2025-04-27  Ray Storer     Updated GetCheckerReasons function to return a hashtable of reasons instead of an array list
+    1.8.3       2025-05-01  Ray Storer     Added GetADObjectById function to the Class and Get-PSTIEADObjectById function and updated the module manifest
 
 TODO:
     - Implement additional error handling for API requests
@@ -59,7 +60,7 @@ class PSTenableIE {
     [string]$ProfileId
     [string]$InfrastructureId
     [string]$DirectoryId
-    [string]$Version = "1.8.2"
+    [string]$Version = "1.8.3"
     [string]$Author = "Ray Storer"
     [string]$Copyright = "Copyright (c) 2025 Ray Storer. All rights reserved."
     [string]$Description = "Class for interacting with the Tenable REST API."
@@ -154,7 +155,13 @@ class PSTenableIE {
         }
         # Check if the response contains pagination headers
         if (-not $response.Headers.'x-pagination-total-count') {
-            $results.AddRange( ($response.Content | ConvertFrom-Json) ) | Out-Null
+            $jsonResponse = $response.Content | ConvertFrom-Json
+
+            if ($jsonResponse -is [PSCustomObject]) {
+                $results.Add( $jsonResponse ) | Out-Null
+            } elseif ($jsonResponse -is [PSCustomObject[]]) {
+                $results.AddRange( $jsonResponse ) | Out-Null
+            }
             return $results
         } # else
         [int]$totalResults = $response.Headers.'x-pagination-total-count'[0]
@@ -244,6 +251,22 @@ class PSTenableIE {
         return $hashtable
     }
 
+
+    [PSCustomObject]GetADObjectById([string]$adObjectId) {
+        <#
+        .SYNOPSIS
+            Retrieves an ADObject from the Tenable API for the specified AD Object id.
+        .LINK https://developer.tenable.com/reference/get_api-directories-directoryid-ad-objects-id
+        .PARAMETER ADObjectId
+            The ID of the ADObject as a string.
+        #>
+        if (-not $adObjectId) {
+            throw "ADObject ID is required."
+        }
+
+        [string]$url = "https://$($this.TenantFqdn)/api/directories/$($this.DirectoryId)/ad-objects/$($adObjectId)"
+        return ($this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey}, 'GET'))[0]
+    }
 
     [PSCustomObject[]]UpdateADObjectByCheckerId(
         [string]$ADObjectId,
@@ -420,6 +443,25 @@ function Get-PSTIEPagedData {
         $Tapi.ContentType = $ContentType
     }
     $Tapi.GetPagedResults("https://$($tapi.TenantFQDN)/$($UrlPath)", $headers, $method)
+}
+
+function Get-PSTIEADObjectById {
+    <#
+    .SYNOPSIS
+        Retrieves an ADObject from the Tenable API for the specified AD Object id.
+    .PARAMETER Tapi
+        The PSTenableIE object.
+    .PARAMETER ADObjectId
+        The ID of the ADObject as a string.
+    #>
+    param (
+        [Parameter(Mandatory=$true,HelpMessage="PSTenableIE object is required.")]
+        [PSTenableIE]$Tapi,
+        [Parameter(Mandatory=$true,HelpMessage="ADObject ID is required.")]
+        [string]$ADObjectId
+    )
+
+    return $Tapi.GetADObjectById($ADObjectId)
 }
 
 function Update-PSTIEADObjectByCheckerId {
