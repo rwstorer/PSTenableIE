@@ -20,7 +20,9 @@ param (
     [Parameter(Mandatory=$false)]
     [int]$InfrastructureId=1,
     [Parameter(Mandatory=$false)]
-    [int]$DirectoryId=1
+    [int]$DirectoryId=1,
+    [Parameter(Mandatory=$false)]
+    [bool]$WantAdObjectType=$true
 )
 
 Import-Module .\PSTenableIE.psd1
@@ -54,22 +56,25 @@ param (
     $dt.Columns.Add('ComputerCn', [string]) | Out-Null # r-key-cred-roca
 
     [int]$id = 0
-    [Int64]$reasonId = 0
     [string]$reason = ''
     [int]$idx = -1
     [int]$idx2 = -1
     [int]$idx3 = -1
+    [int]$idx4 = -1
     [Int64]$R_KEY_CRED_ROCA = 59000
     [Int64]$R_KEY_CRED_ACL = 59005
     [Int64]$R_KEY_CRED_OWNER = 59006    
     foreach ($deviance in $Deviances) {
+        if ($VerbosePreference -ne 'SilentlyContinue') {
+            Write-Progress -PercentComplete ($id / $Deviances.Count * 100) -Status "Processing Deviance" -Activity "Deviance ID: $($deviance.id)"
+        }
         $id++
         # the reasonId is a 64-bit integer, we may need to upcast 32-bit integers to 64-bit integers
-        $reasonId = $deviance.reasonId
-        $reason = ($reasons[$reasonId]).codename
+        $reason = ($reasons[$deviance.reasonId]).codename
         $idx = -1
         $idx2 = -1
         $idx3 = -1
+        $idx4 = -1
         [System.Data.DataRow]$row = $dt.NewRow()
         $row.ID = $id
         if ($UseLocalDatetime) {
@@ -79,13 +84,16 @@ param (
         }
         $row.reason = $reason
         $row.adObjectId = $deviance.adObjectId
+        $row.ADObjectType = [DBNull]::Value
 
-        switch ($reasonId) {
+        switch ($deviance.reasonId) {
             { $_ -eq $R_KEY_CRED_ROCA } {
+                # TODO: check the keyid, deviceid, and computercn attributes for the correct index
                 $idx = [Array]::IndexOf($deviance.attributes.name, 'KeyId')
                 $idx2 = [Array]::IndexOf($deviance.attributes.name, 'DeviceId')
                 $idx3 = [Array]::IndexOf($deviance.attributes.name, 'ComputerCn')
-                $row.AccountCn = [DBNull]::Value
+                $idx4 = [Array]::IndexOf($deviance.attributes.name, 'AccountCn')
+                $row.AccountCn = $deviance.attributes[$idx4].value
                 $row.SID = [DBNull]::Value
                 $row.SidCn = [DBNull]::Value
                 $row.ObjectName = [DBNull]::Value
@@ -127,11 +135,16 @@ param (
     if ($WantAdObjectType) {
         [hashtable]$adObjects = @{}
         # get the ADObjectType for each adObjectId
+        [int]$cnt = 0
         foreach ($row in $dt.Rows) {
+            $cnt++
+            if ($VerbosePreference -ne 'SilentlyContinue') {
+                Write-Progress -PercentComplete ($cnt / $dt.Rows.Count * 100) -Status "Setting ADObjects" -Activity "ADObjectId: $($row.adObjectId)"
+            }
             if (-not $adObjects.ContainsKey($row.adObjectId)) {
                 [PSCustomObject]$adObject = Get-PSTIEADObjectById -Tapi $tapi -AdObjectId $row.adObjectId
-                # get the samaccounttype for the adObjectId
-                $adObjects[$row.adObjectId] = ($adObject.objectAttributes | Where-Object { $_.name -eq 'samaccounttype' }).value
+                # get the objectcategory for the adObjectId
+                $adObjects[$row.adObjectId] = $adObject.objectAttributes[[Array]::IndexOf($adObject.objectAttributes.name, 'objectcategory')].value
             }
             if ($adObjects[$row.adObjectId]) {
                 try {
@@ -172,4 +185,4 @@ $tapi = New-PSTenableIE -ApiKey $ApiKey -TenantFqdn $TenantFqdn -ContentType $Co
 # In my environment, this checker ID is 59. Yours may differ.
 [int]$CHECKER_ID = 59
 [System.Collections.ArrayList]$deviances = Get-PSTIESpecificCheckerDeviances -Tapi $tapi -CheckerId $CHECKER_ID
-Get-ShadowCredentials -Deviances $deviances -UseLocalDatetime $UseLocalDatetime -WantAdObjectType $true
+Get-ShadowCredentials -Deviances $deviances -UseLocalDatetime $UseLocalDatetime -WantAdObjectType $WantAdObjectType
