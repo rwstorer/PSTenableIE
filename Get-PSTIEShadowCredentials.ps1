@@ -133,6 +133,7 @@ param (
     }
 
     if ($WantAdObjectType) {
+        # TODO: perhaps save the adObjects hashtable to a file for later use
         [hashtable]$adObjects = @{}
         # get the ADObjectType for each adObjectId
         [int]$cnt = 0
