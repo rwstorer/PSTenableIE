@@ -22,20 +22,27 @@ param (
     [Parameter(Mandatory=$false)]
     [int]$DirectoryId=1,
     [Parameter(Mandatory=$false)]
-    [bool]$WantAdObjectType=$true
+    [bool]$WantAdObjectType=$true,
+    [Parameter(Mandatory=$false)]
+    [string]$ADObjectCsvPath=$null
 )
 
 Import-Module .\PSTenableIE.psd1
 
 function Get-ShadowCredentials {
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName='Default')]
 param (
-    [Parameter(Mandatory=$true)]
+    [Parameter(Mandatory=$true, ParameterSetName='Default')]
+    [Parameter(Mandatory=$true, ParameterSetName='GetADObjectType')]
     [System.Collections.ArrayList]$Deviances,
-    [Parameter(Mandatory=$false)]
+    [Parameter(Mandatory=$false, ParameterSetName='GetADObjectType')]
+    [Parameter(Mandatory=$false, ParameterSetName='Default')]
+    [bool]$UseLocalDatetime=$false,
+
+    [Parameter(Mandatory=$false, ParameterSetName='GetADObjectType')]
     [bool]$WantAdObjectType=$true,
-    [Parameter(Mandatory=$false)]
-    [bool]$UseLocalDatetime=$false
+    [Parameter(Mandatory=$false, ParameterSetName='GetADObjectType')]
+    [string]$ADObjectCsvPath=$null
 )
     [System.Collections.Hashtable]$reasons = Get-PSTIECheckerReasons -Tapi $tapi -CheckerId $CHECKER_ID
 
@@ -88,7 +95,6 @@ param (
 
         switch ($deviance.reasonId) {
             { $_ -eq $R_KEY_CRED_ROCA } {
-                # TODO: check the keyid, deviceid, and computercn attributes for the correct index
                 $idx = [Array]::IndexOf($deviance.attributes.name, 'KeyId')
                 $idx2 = [Array]::IndexOf($deviance.attributes.name, 'DeviceId')
                 $idx3 = [Array]::IndexOf($deviance.attributes.name, 'ComputerCn')
@@ -133,8 +139,21 @@ param (
     }
 
     if ($WantAdObjectType) {
-        # TODO: perhaps save the adObjects hashtable to a file for later use
         [hashtable]$adObjects = @{}
+        if ($ADObjectCsvPath) {
+            if ((-not (Test-Path -Path $ADObjectCsvPath)) -and (Test-Path -Path $ADObjectCsvPath -IsValid)) {
+                Write-Verbose "ADObject CSV file not found: $($ADObjectCsvPath). I will attempt to create it."
+            } elseif (-not (Test-Path -Path $ADObjectCsvPath -IsValid)) {
+                Write-Warning "ADObject CSV file is not valid: $($ADObjectCsvPath). I cannot use it."
+                $ADObjectCsvPath = $null
+            } else {
+                Write-Verbose "Reading ADObject CSV file: $($ADObjectCsvPath). I will overwrite it."
+                # read the ADObjectId and ADObjectType from the CSV file
+                foreach ($csv in (Import-Csv -Path $ADObjectCsvPath -Delimiter ',')) {
+                    $adObjects.Add($csv.key, $csv.value)
+                }
+            }
+        }
         # get the ADObjectType for each adObjectId
         [int]$cnt = 0
         foreach ($row in $dt.Rows) {
@@ -159,7 +178,12 @@ param (
                 $row.ADObjectType = [DBNull]::Value
             }
         }
+        if ($ADObjectCsvPath -and $adObjects.Count -gt 0) {
+            Write-Verbose "Writing ADObject CSV file: $($ADObjectCsvPath)"
+            $adObjects.GetEnumerator() | Export-Csv -Path $ADObjectCsvPath -NoTypeInformation -Delimiter ',' -Force
+        }
     }
+
 
     # emit the DataTable as a collection of PSCustomObjects
     foreach ($row in $dt.Rows) {
@@ -186,4 +210,4 @@ $tapi = New-PSTenableIE -ApiKey $ApiKey -TenantFqdn $TenantFqdn -ContentType $Co
 # In my environment, this checker ID is 59. Yours may differ.
 [int]$CHECKER_ID = 59
 [System.Collections.ArrayList]$deviances = Get-PSTIESpecificCheckerDeviances -Tapi $tapi -CheckerId $CHECKER_ID
-Get-ShadowCredentials -Deviances $deviances -UseLocalDatetime $UseLocalDatetime -WantAdObjectType $WantAdObjectType
+Get-ShadowCredentials -Deviances $deviances -UseLocalDatetime $UseLocalDatetime -WantAdObjectType $WantAdObjectType -ADObjectCsvPath $ADObjectCsvPath
