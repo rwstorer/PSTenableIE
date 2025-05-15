@@ -43,6 +43,7 @@
     1.8.1       2025-04-20  Ray Storer     Added GetCheckerReasons function and Get-PSTIECheckerReasons function and updated the module manifest
     1.8.2       2025-04-27  Ray Storer     Updated GetCheckerReasons function to return a hashtable of reasons instead of an array list
     1.8.3       2025-05-01  Ray Storer     Added GetADObjectById function to the Class and Get-PSTIEADObjectById function and updated the module manifest
+    1.8.4       2025-05-14  Ray Storer     Added Get-PSTIEAllCheckerInstances function
 
 TODO:
     - Implement additional error handling for API requests
@@ -157,15 +158,15 @@ class PSTenableIE {
         if (-not $response.Headers.'x-pagination-total-count') {
             $jsonResponse = $response.Content | ConvertFrom-Json
 
-            if ($jsonResponse.Count -gt 0) {
+            if ($jsonResponse.Count -gt 1) {
                 $results.AddRange( $jsonResponse ) | Out-Null
-            } else {
+            } elseif ($jsonResponse) {
                 $results.Add( $jsonResponse ) | Out-Null                
             }
             return $results
         } # else
-        [int]$totalResults = $response.Headers.'x-pagination-total-count'
-        [int]$pageSize = $response.Headers.'x-pagination-per-page'
+        [int]$totalResults = $response.Headers.'x-pagination-total-count'[0]
+        [int]$pageSize = $response.Headers.'x-pagination-per-page'[0]
         [int]$numberOfPages = [math]::Ceiling($totalResults / $pageSize)
     
         $results.AddRange( ($response.Content | ConvertFrom-Json) ) | Out-Null
@@ -308,6 +309,16 @@ class PSTenableIE {
 
         return ($response.Content | ConvertFrom-Json)
     }
+
+    [PSCustomObject[]]GetAllCheckerInstances() {
+        <#
+        .SYNOPSIS
+            Retrieves all checker instances from the Tenable API.
+        .LINK https://developer.tenable.com/reference/get_api-checkers
+        #>
+        [string]$url = "https://$($this.TenantFqdn)/api/checkers"
+        return $this.GetPagedResults($url, @{'accept'=$this.ContentType; 'x-api-key'=$this.ApiKey}, 'GET')
+    }
 }
 
 
@@ -364,6 +375,21 @@ function Get-PSTIEAllDirectoryDeviances {
     )
 
     return $Tapi.GetAllDirectoryDeviances($Tapi.InfrastructureId, $Tapi.DirectoryId)
+}
+
+function Get-PSTIEAllCheckerInstances {
+    <#
+    .SYNOPSIS
+        Retrieves all checker instances from the Tenable API.
+    .PARAMETER Tapi
+        The PSTenableIE object.
+    #>
+    param (
+        [Parameter(Mandatory=$true,HelpMessage="PSTenableIE object is required.")]
+        [PSTenableIE]$Tapi
+    )
+
+    return $Tapi.GetAllCheckerInstances()
 }
 
 function Get-PSTIECheckerReasons {
