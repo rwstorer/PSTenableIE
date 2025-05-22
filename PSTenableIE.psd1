@@ -7,6 +7,6 @@
 
     FunctionsToExport = @('Get-PSTIEAllCheckerInstances','Get-PSTIEADObjectById','Get-PSTIECheckerReasons','Get-PSTIEPagedData','Get-PSTIESpecificCheckerDeviances','Get-PSTIEAllDirectoryDeviances','New-PSTenableIE','Update-PSTIEADObjectByCheckerId')
 
-    Copyright = '(c) 2025 Ray Storer. All rights reserved.'
+    Copyright = 'Copyright © 2025 Ray Storer. All rights reserved. Apache 2.0 License (https://www.apache.org/licenses/LICENSE-2.0)'
     PowerShellVersion = '5.1'
 }

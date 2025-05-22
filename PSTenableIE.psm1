@@ -61,9 +61,10 @@ class PSTenableIE {
     [string]$ProfileId
     [string]$InfrastructureId
     [string]$DirectoryId
-    [string]$Version = "1.8.3"
+    [string]$Version = "1.8.4"
     [string]$Author = "Ray Storer"
-    [string]$Copyright = "Copyright (c) 2025 Ray Storer. All rights reserved."
+    [string]$Copyright = "Copyright © 2025 Ray Storer. All rights reserved."
+    [string]$License = "This script is licensed under the Apache 2.0 License (https://www.apache.org/licenses/LICENSE-2.0)."
     [string]$Description = "Class for interacting with the Tenable REST API."
     #endregion
 
