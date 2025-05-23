@@ -58,6 +58,7 @@ param (
     $dt.Columns.Add('SidCn', [string]) | Out-Null # r-key-cred-owner
     $dt.Columns.Add('ObjectName', [string]) | Out-Null # r-key-cred-acl
     $dt.Columns.Add('DangerousAceList', [string]) | Out-Null # r-key-cred-acl
+    $dt.Columns.Add('AceAccount',[string]) | Out-Null # item3 in the json string has the account name
     $dt.Columns.Add('KeyId', [string]) | Out-Null # r-key-cred-roca
     $dt.Columns.Add('DeviceId', [string]) | Out-Null # r-key-cred-roca
     $dt.Columns.Add('ComputerCn', [string]) | Out-Null # r-key-cred-roca
@@ -107,6 +108,7 @@ param (
                 $row.KeyId = $deviance.attributes[$idx].value
                 $row.DeviceId = $deviance.attributes[$idx2].value
                 $row.ComputerCn = $deviance.attributes[$idx3].value
+                $row.AceAccount = [DBNull]::Value
             }
             { $_ -eq $R_KEY_CRED_ACL } { 
                 $idx = [Array]::IndexOf($deviance.attributes.name, 'ObjectName')
@@ -118,7 +120,16 @@ param (
                 $row.DeviceId = [DBNull]::Value
                 $row.ComputerCn = [DBNull]::Value
                 $row.ObjectName = $deviance.attributes[$idx].value
-                $row.DangerousAceList = $deviance.attributes[$idx2].value
+                # this json string is not formatted. so, i formatted it.
+                $j = $deviance.attributes[$idx2].value | ConvertFrom-Json
+                if ($j.item3) {
+                    if ($j.count -gt 1) {
+                        $row.AceAccount = $j.item3 -join ', '
+                    } else {
+                        $row.AceAccount = $j.item3
+                    }
+                }
+                $row.DangerousAceList = $j | ConvertTo-Json -Depth 99 | Out-String
             }
             { $_ -eq $R_KEY_CRED_OWNER } {
                 $idx = [Array]::IndexOf($deviance.attributes.name, 'AccountCn')
@@ -198,6 +209,7 @@ param (
             SidCn = $row.SidCn
             ObjectName = $row.ObjectName
             DangerousAceList = $row.DangerousAceList
+            AceAccount = $row.AceAccount
             KeyId = $row.KeyId
             DeviceId = $row.DeviceId
             ComputerCn = $row.ComputerCn
