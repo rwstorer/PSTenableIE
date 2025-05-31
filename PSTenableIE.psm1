@@ -166,8 +166,8 @@ class PSTenableIE {
             }
             return $results
         } # else
-        [int]$totalResults = $response.Headers.'x-pagination-total-count'[0]
-        [int]$pageSize = $response.Headers.'x-pagination-per-page'[0]
+        [int]$totalResults = $response.Headers.'x-pagination-total-count'
+        [int]$pageSize = $response.Headers.'x-pagination-per-page'
         [int]$numberOfPages = [math]::Ceiling($totalResults / $pageSize)
     
         $results.AddRange( ($response.Content | ConvertFrom-Json) ) | Out-Null
